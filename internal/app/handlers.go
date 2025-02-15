@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jaevor/go-nanoid"
 )
+const urlTTL = 30 * 24 * time.Hour
 
 func (app *Application) shortenHandler(c *gin.Context) {
 	var req struct {
@@ -31,8 +32,8 @@ func (app *Application) shortenHandler(c *gin.Context) {
 
 	
 	pipe := app.Redis.TxPipeline()
-	pipe.Set(c, "short:"+shortID, req.URL, 30*24*time.Hour)
-	pipe.Set(c, "long:"+req.URL, shortID, 30*24*time.Hour)
+	pipe.Set(c, "short:"+shortID, req.URL,urlTTL)
+	pipe.Set(c, "long:"+req.URL, shortID, urlTTL)
 	if _, err := pipe.Exec(c); err != nil {
 		app.errorResponse(c, http.StatusInternalServerError, "Failed to create short URL")
 		return
