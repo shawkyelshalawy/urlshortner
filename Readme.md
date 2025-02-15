@@ -1,7 +1,8 @@
 # URL Shortener Service
 
 A lightweight URL shortener built in Go using Gin, Redis, MongoDB, and Nginx. This project demonstrates a microservices architecture with containerization (Docker) and orchestration (Kubernetes).
-
+## Time taken to finish it :
+ 13 hours
 ## Table of Contents
 
 - [Overview](#overview)
