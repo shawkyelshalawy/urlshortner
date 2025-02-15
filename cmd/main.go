@@ -2,56 +2,82 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
+	"github.com/shawkyelshalawy/urlshortner/internal/app"
 	"github.com/shawkyelshalawy/urlshortner/internal/config"
-	"github.com/shawkyelshalawy/urlshortner/internal/handlers"
 	"github.com/shawkyelshalawy/urlshortner/internal/storage"
+	"go.uber.org/zap"
 )
 
 func main() {
 	cfg := config.Load()
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
 
-	rdb , err := storage.NewRedisClient(cfg)
+	
+	rdb, err := storage.NewRedisClient(cfg)
 	if err != nil {
-		log.Fatalf("Could not connect to Redis: %v", err)
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
-	router := gin.Default()
 
-	router.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "pong"})
-	})
+	
+	mongoClient, err := storage.NewMongoClient(cfg)
+	if err != nil {
+		logger.Fatal("Failed to connect to MongoDB", zap.Error(err))
+	}
 
-	router.POST("/shorten", func(c *gin.Context) {
-		handlers.ShortenHandler(c, rdb, cfg.BaseURL)
-	})
+	application := &app.Application{
+		Config:        cfg,
+		Logger:        logger,
+		Redis:         rdb,
+		Mongo:         mongoClient,
+		AnalyticsChan: make(chan app.AnalyticsEvent, 100),
+	}
 
-	router.GET("/:shortID", func(c *gin.Context) {
-		handlers.RedirectHandler(c, rdb)
-	})
+	
+	go application.StartAnalyticsWorker(context.Background())
 
+	
 	srv := &http.Server{
-		Addr:    ":" + cfg.ServerPort,
-		Handler: router,
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Handler:      application.Routes(),
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	}
 
+	
+	shutdownError := make(chan error)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Server error: %v", err)
-		}
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		s := <-quit
+
+		logger.Info("Shutting down server", zap.String("signal", s.String()))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		shutdownError <- srv.Shutdown(ctx)
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	<-ctx.Done()
+	logger.Info("Starting server", zap.String("addr", srv.Addr))
 
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	err = srv.ListenAndServe()
+	if !errors.Is(err, http.ErrServerClosed) {
+		logger.Fatal("Server failed", zap.Error(err))
 	}
+
+	err = <-shutdownError
+	if err != nil {
+		logger.Fatal("Graceful shutdown failed", zap.Error(err))
+	}
+
+	logger.Info("Server stopped")
 }
