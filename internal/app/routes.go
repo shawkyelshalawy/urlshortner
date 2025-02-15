@@ -15,8 +15,8 @@ func (app *Application) Routes() *gin.Engine {
 
 	// Routes
 	router.GET("/ping", app.pingHandler)
-	router.POST("/shorten", app.shortenHandler)
-	router.GET("/:shortID", app.redirectHandler)
+	router.POST("/shorten", app.ShortenHandler)
+	router.GET("/:shortID", app.RedirectHandler)
 
 	return router
 }

@@ -9,7 +9,7 @@ import (
 )
 const urlTTL = 30 * 24 * time.Hour
 
-func (app *Application) shortenHandler(c *gin.Context) {
+func (app *Application) ShortenHandler(c *gin.Context) {
 	var req struct {
 		URL string `json:"url" binding:"required,url"`
 	}
@@ -45,7 +45,7 @@ func (app *Application) shortenHandler(c *gin.Context) {
 	})
 }
 
-func (app *Application) redirectHandler(c *gin.Context) {
+func (app *Application) RedirectHandler(c *gin.Context) {
 	shortID := c.Param("shortID")
 	url, err := app.Redis.Get(c, "short:"+shortID).Result()
 	if err != nil {
